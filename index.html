@@ -2,181 +2,144 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AR Практика №7</title>
+  <title>AR Практика №7 (Laptop Version)</title>
   
-  <!-- 1. Подключение A-Frame и MindAR -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
   
   <style>
-    /* Стили для интерфейса */
     body { margin: 0; overflow: hidden; }
     
-    /* Оверлей сканирования */
-    #scanning-overlay {
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    /* Оверлей с подсказками */
+    #info-overlay {
       position: absolute;
-      left: 0; right: 0; top: 0; bottom: 0;
-      background: transparent;
-      z-index: 2;
-    }
-    .hidden { display: none !important; }
-
-    /* Панель управления кнопками */
-    #ui-container {
-      position: absolute;
-      bottom: 20px;
-      left: 0;
-      width: 100%;
-      text-align: center;
-      z-index: 10;
-      display: none; /* Скрыто, пока маркер не найден */
-    }
-    
-    button {
-      background-color: #4CAF50;
-      border: none;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.7);
       color: white;
-      padding: 10px 20px;
+      padding: 15px 30px;
+      border-radius: 30px;
+      font-family: Arial, sans-serif;
+      font-size: 18px;
+      z-index: 10;
+      transition: all 0.3s;
       text-align: center;
-      text-decoration: none;
-      display: inline-block;
-      font-size: 16px;
-      margin: 4px 2px;
-      cursor: pointer;
-      border-radius: 12px;
+      border: 2px solid white;
     }
-    
-    button:active { background-color: #3e8e41; }
+
+    .success-text {
+      background: rgba(40, 167, 69, 0.8) !important;
+      border-color: #28a745 !important;
+    }
   </style>
 
   <script>
-    // КОМПОНЕНТ ДЛЯ ЖЕСТОВ (Масштаб и Вращение пальцами) - Максимальный балл
-    AFRAME.registerComponent('gesture-handler', {
-      schema: {
-        enabled: { default: true },
-        rotationFactor: { default: 5 },
-        minScale: { default: 0.1 },
-        maxScale: { default: 8 },
-      },
+    // КОМПОНЕНТ ОБРАТНОЙ СВЯЗИ
+    AFRAME.registerComponent('feedback-handler', {
       init: function () {
-        this.handleScale = this.handleScale.bind(this);
-        this.handleRotation = this.handleRotation.bind(this);
-        this.isVisible = false;
-        this.initialScale = 1;
-        this.scaleFactor = 1;
+        const el = this.el; // Это наша 3D модель
+        const infoBox = document.getElementById('info-overlay');
         
-        // Слушаем события сцены (когда маркер найден/потерян)
-        this.el.sceneEl.addEventListener("markerFound", (e) => {
-          this.isVisible = true;
-          document.getElementById('ui-container').style.display = 'block';
-          document.getElementById('scanning-overlay').classList.add('hidden');
+        // Звуки
+        const soundFound = document.querySelector('#sound-found');
+        const soundClick = document.querySelector('#sound-click');
+
+        // 1. Событие: Маркер найден
+        el.sceneEl.addEventListener("markerFound", (e) => {
+          infoBox.innerText = "Маркер найден! Наведите мышь на объект.";
+          infoBox.classList.add('success-text');
+          soundFound.play().catch(e => console.log("Автоплей блокирован браузером"));
         });
-        
-        this.el.sceneEl.addEventListener("markerLost", (e) => {
-          this.isVisible = false;
-          document.getElementById('ui-container').style.display = 'none';
-          document.getElementById('scanning-overlay').classList.remove('hidden');
+
+        // 2. Событие: Маркер потерян
+        el.sceneEl.addEventListener("markerLost", (e) => {
+          infoBox.innerText = "Наведите камеру на маркер";
+          infoBox.classList.remove('success-text');
         });
-      },
-      update: function () {
-        if (this.data.enabled) {
-          this.el.sceneEl.addEventListener("onefingermove", this.handleRotation);
-          this.el.sceneEl.addEventListener("twofingermove", this.handleScale);
-        } else {
-          this.el.sceneEl.removeEventListener("onefingermove", this.handleRotation);
-          this.el.sceneEl.removeEventListener("twofingermove", this.handleScale);
-        }
-      },
-      handleRotation: function (event) {
-        if (this.isVisible) {
-          this.el.object3D.rotation.y += event.detail.positionChange.x * this.data.rotationFactor;
-        }
-      },
-      handleScale: function (event) {
-        if (this.isVisible) {
-          this.scaleFactor *= (1 + event.detail.spreadChange / event.detail.startSpread);
-          this.scaleFactor = Math.min(Math.max(this.scaleFactor, this.data.minScale), this.data.maxScale);
-          this.el.object3D.scale.x = this.scaleFactor * this.initialScale;
-          this.el.object3D.scale.y = this.scaleFactor * this.initialScale;
-          this.el.object3D.scale.z = this.scaleFactor * this.initialScale;
-        }
+
+        // 3. Визуальная связь: Наведение мыши (MouseEnter)
+        el.addEventListener('mouseenter', () => {
+          infoBox.innerText = "Нажмите, чтобы взаимодействовать!";
+          
+          // Делаем модель красноватой (меняем emissive цвет для подсветки)
+          el.object3D.traverse(function (node) {
+            if (node.isMesh) {
+              // Сохраняем старый цвет, если нужно (упрощенно просто красим)
+              node.material.emissive.setHex(0xFF0000); 
+              node.material.emissiveIntensity = 0.5;
+            }
+          });
+        });
+
+        // 4. Убираем подсветку (MouseLeave)
+        el.addEventListener('mouseleave', () => {
+          infoBox.innerText = "Маркер найден! Наведите мышь на объект.";
+          
+          el.object3D.traverse(function (node) {
+            if (node.isMesh) {
+              node.material.emissive.setHex(0x000000); // Черный emissive = нет свечения
+            }
+          });
+        });
+
+        // 5. Клик по объекту
+        el.addEventListener('click', () => {
+          soundClick.currentTime = 0;
+          soundClick.play();
+          
+          // Пример анимации при клике (подпрыгивание)
+          el.setAttribute('animation', {
+            property: 'position',
+            to: '0 0.5 0.1',
+            dur: 200,
+            easing: 'easeOutQuad',
+            dir: 'alternate',
+            loop: 1
+          });
+        });
       }
     });
   </script>
 </head>
 
 <body>
-  <!-- Интерфейс: Сообщение о сканировании -->
-  <div id="scanning-overlay">
-    <div style="background: rgba(0,0,0,0.6); color: white; padding: 20px; border-radius: 10px;">
-      Наведите камеру на маркер
-    </div>
-  </div>
+  <!-- Интерфейс -->
+  <div id="info-overlay">Наведите камеру ноутбука на маркер</div>
 
-  <!-- Интерфейс: Кнопки управления -->
-  <div id="ui-container">
-    <button onclick="resizeModel(0.1)">Увеличить (+)</button>
-    <button onclick="resizeModel(-0.1)">Уменьшить (-)</button>
-    <button onclick="resetModel()">Сброс</button>
-  </div>
-
-  <!-- 2. Сцена AR -->
-  <!-- mindar-image: путь к target.mind. uiLoading: no - скрывает стандартный лоадер -->
   <a-scene mindar-image="imageTargetSrc: ./targets.mind; uiLoading: no;" 
            color-space="sRGB" 
-           renderer="colorManagement: true, physicallyCorrectLights" 
+           renderer="colorManagement: true, physicallyCorrectLights"
            vr-mode-ui="enabled: false" 
-           device-orientation-permission-ui="enabled: false"
-           gesture-detector>
+           device-orientation-permission-ui="enabled: false">
            
     <a-assets>
-      <!-- Загрузка модели. id="avatarModel" используем для ссылок -->
       <a-asset-item id="avatarModel" src="./model.glb"></a-asset-item>
+      <!-- Звуки (src укажите на свои файлы) -->
+      <audio id="sound-found" src="./found.mp3" preload="auto"></audio>
+      <audio id="sound-click" src="./click.mp3" preload="auto"></audio>
     </a-assets>
 
-    <!-- Камера -->
-    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+    <!-- КАМЕРА С КУРСОРОМ МЫШИ -->
+    <!-- rayOrigin: mouse — это главное для ноутбука! Позволяет кликать мышкой по 3D -->
+    <a-camera position="0 0 0" look-controls="enabled: false" cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-camera>
 
-    <!-- Объект привязанный к маркеру (targetIndex: 0 - первая картинка в mind файле) -->
+    <!-- AR Маркер -->
     <a-entity mindar-image-target="targetIndex: 0">
       
-      <!-- Сама 3D модель -->
-      <!-- gesture-handler - наш компонент для пальцев -->
+      <!-- Модель -->
+      <!-- class="clickable" нужен для работы raycaster -->
+      <!-- feedback-handler подключает наш скрипт -->
       <a-gltf-model id="ar-model" 
+                    class="clickable"
                     src="#avatarModel" 
-                    rotation="0 0 90" 
-                    position="0 0 0.1" 
-                    scale="0.1 0.1 0.1"
-                    gesture-handler>
+                    position="0 0 0.1"
+                    rotation="0 90 0" 
+                    scale="0.05 0.05 0.05" 
+                    feedback-handler>
       </a-gltf-model>
 
     </a-entity>
   </a-scene>
-
-  <!-- Логика для кнопок -->
-  <script>
-    const modelEntity = document.querySelector('#ar-model');
-    let currentScale = 0.5; // Начальный масштаб, должен совпадать с scale в HTML
-
-    function resizeModel(change) {
-      currentScale += change;
-      // Ограничиваем минимум, чтобы не исчезла
-      if(currentScale < 0.1) currentScale = 0.1;
-      
-      modelEntity.setAttribute('scale', `${currentScale} ${currentScale} ${currentScale}`);
-    }
-
-    function resetModel() {
-      currentScale = 0.5;
-      modelEntity.setAttribute('scale', '0.5 0.5 0.5');
-      modelEntity.setAttribute('rotation', '0 0 0');
-    }
-  </script>
 </body>
-
 </html>
-
-
