@@ -2,101 +2,148 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AR Практика №7 (Laptop Version)</title>
+  <title>AR Практика №7 (Final Stable)</title>
   
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
   
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; font-family: 'Arial', sans-serif; }
     
-    /* Оверлей с подсказками */
-    #info-overlay {
-      position: absolute;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.7);
+    /* ЭКРАН СТАРТА (Чтобы разблокировать звук) */
+    #start-screen {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
       color: white;
+    }
+    #start-btn {
       padding: 15px 30px;
-      border-radius: 30px;
-      font-family: Arial, sans-serif;
-      font-size: 18px;
-      z-index: 10;
-      transition: all 0.3s;
-      text-align: center;
-      border: 2px solid white;
+      font-size: 20px;
+      background: #28a745;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-top: 20px;
     }
 
-    .success-text {
-      background: rgba(40, 167, 69, 0.8) !important;
-      border-color: #28a745 !important;
+    /* Верхняя подсказка */
+    #info-overlay {
+      position: absolute;
+      top: 10px; left: 50%; transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 20px;
+      z-index: 10;
+      text-align: center;
+      border: 1px solid white;
+      pointer-events: none;
+      display: none; /* Скрыто до старта */
     }
+
+    /* ПАНЕЛЬ УПРАВЛЕНИЯ */
+    #control-panel {
+      position: absolute; bottom: 20px; right: 20px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 15px; border-radius: 15px;
+      z-index: 999;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      display: none; /* Скрыто пока нет маркера */
+    }
+    .visible { display: block !important; }
+
+    .control-group { margin-bottom: 10px; text-align: center; }
+    .control-label { font-size: 12px; font-weight: bold; color: #333; display: block; }
+    button {
+      background-color: #007bff; border: none; color: white;
+      padding: 10px 14px; margin: 2px; border-radius: 5px;
+      cursor: pointer; font-size: 16px;
+    }
+    button:active { background-color: #0056b3; }
+    button.reset-btn { background-color: #dc3545; width: 100%; margin-top: 5px;}
   </style>
 
   <script>
-    // КОМПОНЕНТ ОБРАТНОЙ СВЯЗИ
-    AFRAME.registerComponent('feedback-handler', {
+    // --- Логика Старта ---
+    function startAR() {
+      const startScreen = document.getElementById('start-screen');
+      const infoOverlay = document.getElementById('info-overlay');
+      const scene = document.querySelector('a-scene');
+
+      // 1. Скрываем экран старта
+      startScreen.style.display = 'none';
+      infoOverlay.style.display = 'block';
+
+      // 2. Пытаемся проиграть звук (тишину), чтобы разблокировать аудио-движок
+      const audio = document.getElementById('sound-found');
+      if(audio) {
+        audio.play().then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        }).catch(e => console.log("Audio unlock failed", e));
+      }
+    }
+
+    // --- Логика Модели ---
+    let state = { scale: 0.5, posX: 0, posY: 0, rotX: 0, rotY: 0 };
+
+    function updateModelTransform() {
+      const el = document.querySelector('#ar-model');
+      if (!el) return;
+      el.setAttribute('scale', `${state.scale} ${state.scale} ${state.scale}`);
+      el.setAttribute('position', `${state.posX} ${state.posY} 0.1`);
+      el.setAttribute('rotation', `${state.rotX} ${state.rotY} 0`);
+    }
+
+    function changeScale(delta) {
+      state.scale += delta;
+      if (state.scale < 0.05) state.scale = 0.05;
+      if (state.scale > 5) state.scale = 5;
+      updateModelTransform();
+    }
+    function rotateModel(axis, degree) {
+      if (axis === 'x') state.rotX += degree;
+      if (axis === 'y') state.rotY += degree;
+      updateModelTransform();
+    }
+    function moveModel(axis, delta) {
+      if (axis === 'x') state.posX += delta;
+      if (axis === 'y') state.posY += delta;
+      updateModelTransform();
+    }
+    function resetModel() {
+      state = { scale: 0.5, posX: 0, posY: 0, rotX: 0, rotY: 0 };
+      updateModelTransform();
+    }
+
+    // --- Компонент управления ---
+    AFRAME.registerComponent('ui-controller', {
       init: function () {
-        const el = this.el; // Это наша 3D модель
-        const infoBox = document.getElementById('info-overlay');
+        const panel = document.getElementById('control-panel');
+        const info = document.getElementById('info-overlay');
+        const audio = document.getElementById('sound-found');
         
-        // Звуки
-        const soundFound = document.querySelector('#sound-found');
-        const soundClick = document.querySelector('#sound-click');
-
-        // 1. Событие: Маркер найден
-        el.sceneEl.addEventListener("markerFound", (e) => {
-          infoBox.innerText = "Маркер найден! Наведите мышь на объект.";
-          infoBox.classList.add('success-text');
-          soundFound.play().catch(e => console.log("Автоплей блокирован браузером"));
-        });
-
-        // 2. Событие: Маркер потерян
-        el.sceneEl.addEventListener("markerLost", (e) => {
-          infoBox.innerText = "Наведите камеру на маркер";
-          infoBox.classList.remove('success-text');
-        });
-
-        // 3. Визуальная связь: Наведение мыши (MouseEnter)
-        el.addEventListener('mouseenter', () => {
-          infoBox.innerText = "Нажмите, чтобы взаимодействовать!";
+        this.el.addEventListener("targetFound", () => {
+          panel.classList.add('visible');
+          info.innerText = "Управляйте моделью кнопками";
           
-          // Делаем модель красноватой (меняем emissive цвет для подсветки)
-          el.object3D.traverse(function (node) {
-            if (node.isMesh) {
-              // Сохраняем старый цвет, если нужно (упрощенно просто красим)
-              node.material.emissive.setHex(0xFF0000); 
-              node.material.emissiveIntensity = 0.5;
-            }
-          });
+          // ЗАПУСК ЗВУКА
+          if (audio) {
+            audio.currentTime = 0;
+            audio.play().catch(e => console.log("Звук заблокирован", e));
+          }
         });
 
-        // 4. Убираем подсветку (MouseLeave)
-        el.addEventListener('mouseleave', () => {
-          infoBox.innerText = "Маркер найден! Наведите мышь на объект.";
-          
-          el.object3D.traverse(function (node) {
-            if (node.isMesh) {
-              node.material.emissive.setHex(0x000000); // Черный emissive = нет свечения
-            }
-          });
-        });
-
-        // 5. Клик по объекту
-        el.addEventListener('click', () => {
-          soundClick.currentTime = 0;
-          soundClick.play();
-          
-          // Пример анимации при клике (подпрыгивание)
-          el.setAttribute('animation', {
-            property: 'position',
-            to: '0 0.5 0.1',
-            dur: 200,
-            easing: 'easeOutQuad',
-            dir: 'alternate',
-            loop: 1
-          });
+        this.el.addEventListener("targetLost", () => {
+          panel.classList.remove('visible');
+          info.innerText = "Наведите камеру на маркер";
         });
       }
     });
@@ -104,10 +151,41 @@
 </head>
 
 <body>
-  <!-- Интерфейс -->
-  <div id="info-overlay">Наведите камеру ноутбука на маркер</div>
+  <!-- ЭКРАН СТАРТА -->
+  <div id="start-screen">
+    <h1>AR Практика</h1>
+    <p>Нажмите кнопку, чтобы включить камеру и звук</p>
+    <button id="start-btn" onclick="startAR()">ЗАПУСТИТЬ AR</button>
+  </div>
 
-  <a-scene mindar-image="imageTargetSrc: ./targets.mind; uiLoading: no;" 
+  <div id="info-overlay">Загрузка...</div>
+
+  <div id="control-panel">
+    <div class="control-group">
+      <span class="control-label">РАЗМЕР</span>
+      <button onclick="changeScale(0.1)">+</button>
+      <button onclick="changeScale(-0.1)">−</button>
+    </div>
+    <div class="control-group">
+      <span class="control-label">ВРАЩЕНИЕ</span>
+      <div><button onclick="rotateModel('x', -15)">▲</button><button onclick="rotateModel('x', 15)">▼</button></div>
+      <div><button onclick="rotateModel('y', -15)">◄</button><button onclick="rotateModel('y', 15)">►</button></div>
+    </div>
+    <div class="control-group">
+      <span class="control-label">ПОЗИЦИЯ</span>
+      <div><button onclick="moveModel('y', 0.1)">↑</button></div>
+      <div><button onclick="moveModel('x', -0.1)">←</button><button onclick="moveModel('x', 0.1)">→</button></div>
+      <div><button onclick="moveModel('y', -0.1)">↓</button></div>
+    </div>
+    <button class="reset-btn" onclick="resetModel()">СБРОС</button>
+  </div>
+
+  <!-- 
+    ВАЖНО: Настройки сглаживания (filterMinCF, filterBeta) 
+    filterMinCF: чем меньше число, тем меньше тряски, но больше задержка (плавность).
+    0.0001 - очень сильное сглаживание.
+  -->
+  <a-scene mindar-image="imageTargetSrc: ./targets.mind; uiLoading: no; filterMinCF: 0.0001; filterBeta: 0.001;" 
            color-space="sRGB" 
            renderer="colorManagement: true, physicallyCorrectLights"
            vr-mode-ui="enabled: false" 
@@ -115,30 +193,14 @@
            
     <a-assets>
       <a-asset-item id="avatarModel" src="./model.glb"></a-asset-item>
-      <!-- Звуки (src укажите на свои файлы) -->
+      <!-- Укажите правильное имя вашего mp3 файла -->
       <audio id="sound-found" src="./found.mp3" preload="auto"></audio>
-      <audio id="sound-click" src="./click.mp3" preload="auto"></audio>
     </a-assets>
 
-    <!-- КАМЕРА С КУРСОРОМ МЫШИ -->
-    <!-- rayOrigin: mouse — это главное для ноутбука! Позволяет кликать мышкой по 3D -->
-    <a-camera position="0 0 0" look-controls="enabled: false" cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-camera>
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    <!-- AR Маркер -->
-    <a-entity mindar-image-target="targetIndex: 0">
-      
-      <!-- Модель -->
-      <!-- class="clickable" нужен для работы raycaster -->
-      <!-- feedback-handler подключает наш скрипт -->
-      <a-gltf-model id="ar-model" 
-                    class="clickable"
-                    src="#avatarModel" 
-                    position="0 0 0.1"
-                    rotation="0 90 0" 
-                    scale="0.05 0.05 0.05" 
-                    feedback-handler>
-      </a-gltf-model>
-
+    <a-entity mindar-image-target="targetIndex: 0" ui-controller>
+      <a-gltf-model id="ar-model" src="#avatarModel" position="0 0 0.1" scale="0.5 0.5 0.5"></a-gltf-model>
     </a-entity>
   </a-scene>
 </body>
